@@ -1,0 +1,4 @@
+name: herdr-desktop-status
+version: 0.2.1
+description: Report Hermes Agent lifecycle states to Herdr via OSC 7501
+entry: __init__.py
