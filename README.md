@@ -31,7 +31,7 @@ The bridge uses private Hermes CLI seams (`GatewayAgent` and `CLIModalMixin`). R
 Install from GitHub into the Hermes profile that runs inside a Herdr terminal:
 
 ```sh
-hermes plugins install arseniy/herdr-windows-status --enable
+hermes plugins install keyf/herdr-windows-status --enable
 ```
 
 Close and reopen the interactive Hermes CLI tab after installation. The gateway itself does not need a restart.
