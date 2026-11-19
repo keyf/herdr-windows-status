@@ -16,6 +16,9 @@ def load_plugin(gateway_agent_class):
     package.__path__ = []
     gateway_agent = types.ModuleType("hermes_cli.gateway_agent")
     gateway_agent.GatewayAgent = gateway_agent_class
+    # Hermes dispatches live events through this module-level table, which snapshots
+    # method objects at import time instead of looking them up on GatewayAgent.
+    gateway_agent._HANDLERS = {"approval.request": gateway_agent_class._on_approval}
     spec = importlib.util.spec_from_file_location("herdr_status_under_test", PLUGIN)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
@@ -47,25 +50,28 @@ class HerdrStatusBridgeTests(unittest.TestCase):
         with patch.dict(sys.modules, {"hermes_cli": package, "hermes_cli.gateway_agent": gateway_agent}):
             self.assertTrue(plugin._install_gateway_client_bridge())
             agent = gateway()
-        return plugin, agent, events
+        return plugin, agent, events, gateway_agent
 
     def test_successful_turn_reports_done_with_reply_headline(self):
-        _, agent, events = self._install_and_record({"final_response": "Finished the report\nDetails"})
+        _, agent, events, _ = self._install_and_record({"final_response": "Finished the report\nDetails"})
         agent.run_conversation()
         self.assertEqual(events, [("working",), ("done", None)])
 
     def test_failed_turn_reports_error_with_sanitized_message(self):
-        _, agent, events = self._install_and_record({"failed": True, "error": "bad\x1b]2;title\x07 gateway"})
+        _, agent, events, _ = self._install_and_record({"failed": True, "error": "bad\x1b]2;title\x07 gateway"})
         agent.run_conversation()
         self.assertEqual(events, [("working",), ("error", None)])
 
-    def test_command_approval_reports_permission_and_human_description(self):
-        _, agent, events = self._install_and_record()
-        self.assertEqual(agent._on_approval({"command": "rm -rf build", "description": "Remove build output"}, None, {}), "once")
+    def test_command_approval_reports_permission_when_dispatched_through_hermes_handler_table(self):
+        plugin, agent, events, gateway_agent = self._install_and_record()
+        # This is Hermes's real event path; calling agent._on_approval directly
+        # would miss the import-time handler-table binding that caused the bug.
+        handler = gateway_agent._HANDLERS["approval.request"]
+        self.assertEqual(handler(agent, {"command": "rm -rf build", "description": "Remove build output"}, None, {}), "once")
         self.assertEqual(events, [("blocked", "permission"), ("working",)])
 
     def test_clarify_request_reports_question_text_until_resolved(self):
-        _, agent, events = self._install_and_record()
+        _, agent, events, _ = self._install_and_record()
         frame = {"method": "clarify", "params": {"questions": [{"question": "Which environment?"}]}}
         self.assertEqual(agent._answer_request(frame), frame)
         self.assertEqual(events, [("blocked", "question"), ("working",)])

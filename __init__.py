@@ -152,7 +152,8 @@ def _install_modal_bridge() -> bool:
 def _install_gateway_client_bridge() -> bool:
     """Patch the local gateway client once; return False outside an interactive client."""
     try:
-        from hermes_cli.gateway_agent import GatewayAgent
+        from hermes_cli import gateway_agent as gateway_agent_module
+        GatewayAgent = gateway_agent_module.GatewayAgent
     except Exception as exc:
         log(f"GatewayAgent unavailable: {exc}")
         return False
@@ -200,6 +201,17 @@ def _install_gateway_client_bridge() -> bool:
     GatewayAgent.run_conversation = run_conversation_with_herdr_status
     GatewayAgent._answer_request = answer_request_with_herdr_status
     GatewayAgent._on_approval = on_approval_with_herdr_status
+    # gateway_agent._HANDLERS is built at module import time and retains the
+    # original method object. Rebind its live approval route as well; changing
+    # only the class attribute leaves real approval.request events invisible.
+    handlers = getattr(gateway_agent_module, "_HANDLERS", None)
+    if isinstance(handlers, dict):
+        if handlers.get("approval.request") is original_on_approval:
+            handlers["approval.request"] = on_approval_with_herdr_status
+        else:
+            log("approval handler table was not patched: unexpected binding")
+    else:
+        log("approval handler table unavailable")
     setattr(GatewayAgent, _PATCH_MARKER, True)
     log("installed GatewayAgent client bridge")
     return True
